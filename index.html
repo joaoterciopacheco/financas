@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0F8540">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Finanças Pessoais</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Babel Standalone para compilar o React JSX no navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Desativa o highlight azul chato ao clicar em botões no celular */
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            background-color: #f3f4f6; /* Fundo cinza ao redor do app em telas grandes */
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo } from 'https://esm.sh/react@18.2.0';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+        import { ArrowLeft, Plus, ChevronLeft, ChevronRight, ThumbsDown, CheckCircle, Trash2, X } from 'https://esm.sh/lucide-react@0.292.0';
+
+        const formatCurrency = (value) => {
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(value);
+        };
+
+        const formatDate = (dateString) => {
+            if (!dateString) return '';
+            const [year, month, day] = dateString.split('-');
+            return `${day}/${month}/${year}`;
+        };
+
+        const isLate = (dueDateString, isPaid) => {
+            if (isPaid) return false;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const [year, month, day] = dueDateString.split('-');
+            const dueDate = new Date(year, month - 1, day);
+            return dueDate < today;
+        };
+
+        // Função para gerar IDs únicos (já que não temos mais o Firebase)
+        const generateId = () => {
+            return Date.now().toString() + Math.random().toString(36).substring(2, 9);
+        };
+
+        const ExpenseForm = ({ selectedExpense, onSave, onCancel }) => {
+            const [description, setDescription] = useState(selectedExpense ? selectedExpense.description : '');
+            const [value, setValue] = useState(selectedExpense ? selectedExpense.value : '');
+            const [dueDate, setDueDate] = useState(selectedExpense ? selectedExpense.dueDate : '');
+            const [repeat, setRepeat] = useState(selectedExpense && selectedExpense.repeat ? selectedExpense.repeat : 'Não repetir');
+            const [repeatType, setRepeatType] = useState(selectedExpense && selectedExpense.repeatType ? selectedExpense.repeatType : 'Fixo');
+            const [installmentsCount, setInstallmentsCount] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!description || !value || !dueDate) return;
+                
+                const payload = {
+                    description,
+                    value: Number(value),
+                    dueDate,
+                    repeat,
+                    ...(repeat === 'Repetir' && { repeatType }),
+                    ...(repeat === 'Repetir' && repeatType === 'Parcelado' && { installmentsCount }),
+                };
+
+                if (selectedExpense) {
+                    payload.id = selectedExpense.id;
+                    if(selectedExpense.groupId) payload.groupId = selectedExpense.groupId;
+                    if(selectedExpense.installmentNumber) payload.installmentNumber = selectedExpense.installmentNumber;
+                }
+
+                onSave(payload);
+            };
+
+            return (
+                <div className="flex flex-col h-full w-full bg-white shadow-2xl overflow-hidden font-sans">
+                    <div className="bg-[#0F8540] text-white p-4 flex items-center shrink-0 shadow-md">
+                        <button onClick={onCancel} className="mr-4 p-1 hover:bg-green-700 rounded-full transition-colors">
+                            <ArrowLeft className="w-6 h-6" />
+                        </button>
+                        <h1 className="text-xl font-medium">{selectedExpense ? 'Editar Despesa' : 'Despesa'}</h1>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto flex flex-col">
+                        <form id="expenseForm" onSubmit={handleSubmit} className="flex flex-col p-6 gap-8 h-full">
+                            <div className="border-b-2 border-gray-200 focus-within:border-[#0F8540] transition-colors pb-1">
+                                <input 
+                                    type="text" placeholder="Informe a descrição" 
+                                    className="w-full text-lg outline-none text-gray-800 placeholder-gray-500 bg-transparent py-2"
+                                    value={description} onChange={e => setDescription(e.target.value)} required
+                                />
+                            </div>
+
+                            <div className="border-b-2 border-gray-200 focus-within:border-[#0F8540] transition-colors pb-1">
+                                <input 
+                                    type="number" step="0.01" placeholder="Informe o valor" 
+                                    className="w-full text-lg outline-none text-gray-800 placeholder-gray-500 bg-transparent py-2"
+                                    value={value} onChange={e => setValue(e.target.value)} required
+                                />
+                            </div>
+
+                            <div className="border-b-2 border-gray-200 focus-within:border-[#0F8540] transition-colors pb-1 flex flex-col items-center">
+                                <label className="text-sm text-gray-500 w-full text-center mb-2">Data de vencimento</label>
+                                <input 
+                                    type="date" 
+                                    className="text-lg outline-none text-gray-800 bg-transparent w-full text-center pb-2 cursor-text"
+                                    value={dueDate} onChange={e => setDueDate(e.target.value)} required
+                                />
+                            </div>
+
+                            {!selectedExpense && (
+                                <div className="flex flex-col gap-6">
+                                    <div className="flex justify-around items-center border-b border-gray-200 pb-6 pt-2">
+                                        <label className="flex items-center space-x-3 cursor-pointer">
+                                            <input type="radio" checked={repeat === 'Não repetir'} onChange={() => setRepeat('Não repetir')} className="form-radio text-[#0F8540] focus:ring-[#0F8540] h-5 w-5 border-gray-400" />
+                                            <span className="text-gray-700 text-lg">Não repetir</span>
+                                        </label>
+                                        <label className="flex items-center space-x-3 cursor-pointer">
+                                            <input type="radio" checked={repeat === 'Repetir'} onChange={() => setRepeat('Repetir')} className="form-radio text-[#0F8540] focus:ring-[#0F8540] h-5 w-5 border-gray-400" />
+                                            <span className="text-gray-700 text-lg">Repetir</span>
+                                        </label>
+                                    </div>
+
+                                    {repeat === 'Repetir' && (
+                                        <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                                            <label className="flex items-center space-x-3 cursor-pointer ml-4">
+                                                <input type="radio" checked={repeatType === 'Fixo'} onChange={() => setRepeatType('Fixo')} className="form-radio text-[#0F8540] focus:ring-[#0F8540] h-5 w-5 border-gray-400" />
+                                                <span className="text-gray-700 text-lg">Fixo</span>
+                                            </label>
+                                            <label className="flex items-center space-x-3 cursor-pointer ml-4">
+                                                <input type="radio" checked={repeatType === 'Parcelado'} onChange={() => setRepeatType('Parcelado')} className="form-radio text-[#0F8540] focus:ring-[#0F8540] h-5 w-5 border-gray-400" />
+                                                <span className="text-gray-700 text-lg">Parcelado</span>
+                                            </label>
+
+                                            {repeatType === 'Parcelado' && (
+                                                <div className="border-b-2 border-[#0F8540] pb-1 mx-4 mt-4">
+                                                    <label className="text-sm text-[#0F8540] block mb-2">Informe a quantidade de parcelas</label>
+                                                    <input type="number" min="2" className="w-full text-lg outline-none text-gray-800 bg-transparent py-1" value={installmentsCount} onChange={e => setInstallmentsCount(e.target.value)} required={repeat === 'Repetir' && repeatType === 'Parcelado'} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="mt-auto pt-6 pb-2">
+                                <button type="submit" form="expenseForm" className="w-full bg-[#FFA000] text-white font-bold py-4 rounded-xl shadow-lg active:bg-orange-500 transition-colors text-lg">
+                                    Salvar
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        function App() {
+            // Inicializa as despesas buscando do LocalStorage do navegador
+            const [expenses, setExpenses] = useState(() => {
+                const saved = localStorage.getItem('minhas_financas_dados');
+                if (saved) {
+                    try {
+                        return JSON.parse(saved);
+                    } catch (e) {
+                        return [];
+                    }
+                }
+                return [];
+            });
+            
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [selectedExpense, setSelectedExpense] = useState(null);
+            const [currentMonth, setCurrentMonth] = useState(new Date());
+            const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+            // Toda vez que a lista de despesas mudar, salva no localStorage automaticamente
+            useEffect(() => {
+                localStorage.setItem('minhas_financas_dados', JSON.stringify(expenses));
+            }, [expenses]);
+
+            const currentMonthExpenses = useMemo(() => {
+                return expenses.filter(exp => {
+                    if (!exp.dueDate) return false;
+                    const [year, month] = exp.dueDate.split('-');
+                    return parseInt(year) === currentMonth.getFullYear() && parseInt(month) === currentMonth.getMonth() + 1;
+                }).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+            }, [expenses, currentMonth]);
+
+            const totalToPay = currentMonthExpenses.reduce((acc, curr) => acc + Number(curr.value || 0), 0);
+            const balanceToPay = currentMonthExpenses.filter(exp => !exp.isPaid).reduce((acc, curr) => acc + Number(curr.value || 0), 0);
+
+            const prevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+            const nextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+            const getMonthName = (date) => date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+
+            const saveExpense = (expenseData) => {
+                let newExpenses = [...expenses];
+
+                if (expenseData.id) {
+                    // Atualiza despesa existente
+                    newExpenses = newExpenses.map(e => e.id === expenseData.id ? { ...e, ...expenseData } : e);
+                    setSelectedExpense(null); // Limpa a seleção
+                } else {
+                    // Cria nova despesa
+                    if (expenseData.repeat === 'Repetir') {
+                        const groupId = generateId(); // Agrupa as parcelas
+                        const [year, month, day] = expenseData.dueDate.split('-');
+                        
+                        let installments = 1;
+                        if (expenseData.repeatType === 'Parcelado') installments = parseInt(expenseData.installmentsCount, 10);
+                        else if (expenseData.repeatType === 'Fixo') installments = 120; // Gera os próximos 10 anos para fixos localmente
+                        
+                        for (let i = 0; i < installments; i++) {
+                            const installmentDate = new Date(year, parseInt(month) - 1 + i, day);
+                            const formattedDate = `${installmentDate.getFullYear()}-${String(installmentDate.getMonth() + 1).padStart(2, '0')}-${String(installmentDate.getDate()).padStart(2, '0')}`;
+                            
+                            let desc = expenseData.description;
+                            if (expenseData.repeatType === 'Parcelado') desc = `${expenseData.description} - ${i + 1} / ${installments}`;
+
+                            newExpenses.push({
+                                id: generateId() + i, // ID único pra cada parcela
+                                description: desc,
+                                value: Number(expenseData.value),
+                                dueDate: formattedDate,
+                                isPaid: false,
+                                repeat: expenseData.repeat,
+                                repeatType: expenseData.repeatType,
+                                groupId: groupId,
+                                installmentNumber: i + 1,
+                                createdAt: new Date().toISOString()
+                            });
+                        }
+                    } else {
+                        // Despesa única
+                        newExpenses.push({
+                            id: generateId(),
+                            description: expenseData.description,
+                            value: Number(expenseData.value),
+                            dueDate: expenseData.dueDate,
+                            isPaid: false,
+                            repeat: expenseData.repeat,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
+                }
+                
+                setExpenses(newExpenses);
+                setCurrentView('dashboard');
+            };
+
+            const togglePaidStatus = (expense) => {
+                const updatedExpense = { ...expense, isPaid: !expense.isPaid };
+                // Atualiza a lista principal
+                setExpenses(expenses.map(e => e.id === expense.id ? updatedExpense : e));
+                // Atualiza a visualização atual do detalhamento
+                setSelectedExpense(updatedExpense);
+            };
+
+            const deleteExpense = (expense, mode = 'single') => {
+                let idsToDelete = [];
+                
+                if (mode === 'single' || !expense.groupId) {
+                    idsToDelete.push(expense.id);
+                } else if (mode === 'future') {
+                    // Pega as despesas do mesmo grupo que tenham data igual ou posterior
+                    const futureExpenses = expenses.filter(e => e.groupId === expense.groupId && e.dueDate >= expense.dueDate);
+                    idsToDelete = futureExpenses.map(e => e.id);
+                } else if (mode === 'all') {
+                    // Pega todas do grupo
+                    const allGroupExpenses = expenses.filter(e => e.groupId === expense.groupId);
+                    idsToDelete = allGroupExpenses.map(e => e.id);
+                }
+
+                // Filtra removendo os IDs deletados
+                setExpenses(expenses.filter(e => !idsToDelete.includes(e.id)));
+                
+                setShowDeleteModal(false);
+                setCurrentView('dashboard');
+            };
+
+            const renderDashboard = () => (
+                <div className="flex flex-col h-full w-full bg-gray-50 overflow-hidden relative font-sans">
+                    
+                    <div className="bg-[#0F8540] text-white p-4 flex justify-between items-center shrink-0 shadow-md z-10">
+                        <h1 className="text-xl font-medium">Minhas Despesas</h1>
+                        <button onClick={() => { setSelectedExpense(null); setCurrentView('form'); }} className="p-1 hover:bg-green-700 rounded-full transition-colors">
+                            <Plus className="w-7 h-7" />
+                        </button>
+                    </div>
+
+                    <div className="bg-[#0F8540] text-white px-4 py-2 flex justify-between items-center shrink-0 border-t border-green-700">
+                        <button onClick={prevMonth} className="p-2 hover:bg-green-700 rounded-full transition-colors"><ChevronLeft className="w-6 h-6" /></button>
+                        <span className="text-lg font-medium lowercase tracking-wide">{getMonthName(currentMonth)}</span>
+                        <button onClick={nextMonth} className="p-2 hover:bg-green-700 rounded-full transition-colors"><ChevronRight className="w-6 h-6" /></button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto pb-24 bg-gray-100">
+                        {currentMonthExpenses.length === 0 ? (
+                            <div className="flex flex-col justify-center items-center h-full text-gray-500">
+                                <p>Nenhuma despesa para este mês.</p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col">
+                                {currentMonthExpenses.map(expense => {
+                                    const late = isLate(expense.dueDate, expense.isPaid);
+                                    let bgClass = "bg-[#D4EDDA]";
+                                    if (late) bgClass = "bg-[#F8D7DA]";
+                                    else if (!expense.isPaid) bgClass = "bg-white";
+                                    
+                                    return (
+                                        <div key={expense.id} onClick={() => { setSelectedExpense(expense); setCurrentView('details'); }} className={`${bgClass} border-b border-gray-200 p-4 flex justify-between items-center cursor-pointer hover:opacity-80 transition-opacity`}>
+                                            <div className="flex flex-col">
+                                                <span className="text-gray-900 font-bold text-base">{expense.description}</span>
+                                                <span className="text-sm text-gray-700 mt-1">{formatDate(expense.dueDate)}</span>
+                                            </div>
+                                            <div className="flex flex-col items-end">
+                                                <span className="text-gray-900 font-bold text-base">{formatCurrency(expense.value)}</span>
+                                                <span className={`text-sm mt-1 lowercase ${expense.isPaid ? 'text-green-700' : late ? 'text-red-600' : 'text-gray-500'}`}>
+                                                    {expense.isPaid ? 'pago' : late ? 'atrasada' : 'pendente'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="absolute bottom-0 inset-x-0 bg-[#0F8540] text-white p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.2)] z-10 flex flex-col gap-1">
+                        <div className="flex justify-between items-center">
+                            <span className="text-base">Total a pagar</span>
+                            <span className="text-base">{formatCurrency(totalToPay)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-xl font-bold">Saldo a pagar</span>
+                            <span className="text-xl font-bold">{formatCurrency(balanceToPay)}</span>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const renderDetails = () => {
+                if (!selectedExpense) return null;
+
+                return (
+                    <div className="flex flex-col h-full w-full bg-gray-50 overflow-hidden font-sans relative">
+                        <div className="bg-[#0F8540] text-white p-4 flex justify-between items-center shrink-0 shadow-md">
+                            <div className="flex items-center">
+                                <button onClick={() => setCurrentView('dashboard')} className="mr-4 p-1 hover:bg-green-700 rounded-full transition-colors">
+                                    <ArrowLeft className="w-6 h-6" />
+                                </button>
+                                <h1 className="text-xl font-medium">Detalhamento</h1>
+                            </div>
+                            <button onClick={() => setCurrentView('form')} className="text-sm font-bold uppercase tracking-wider hover:text-gray-200 transition-colors">
+                                Editar
+                            </button>
+                        </div>
+
+                        <div className="flex-1 p-6 flex flex-col">
+                            <h2 className="text-center text-2xl text-gray-700 font-medium mb-8 mt-4">
+                                {selectedExpense.description}
+                            </h2>
+
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col mb-8">
+                                <div className="flex border-b border-gray-200">
+                                    <div className="flex-1 p-6 text-center border-r border-gray-200 flex flex-col items-center justify-center">
+                                        <span className="text-2xl text-gray-600 font-medium mb-2">{formatCurrency(selectedExpense.value)}</span>
+                                        <span className="text-gray-500 text-lg">{formatDate(selectedExpense.dueDate)}</span>
+                                    </div>
+                                    <div className={`flex-1 p-6 flex flex-col items-center justify-center cursor-pointer transition-colors ${selectedExpense.isPaid ? 'bg-green-50 text-[#0F8540]' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'}`} onClick={() => togglePaidStatus(selectedExpense)}>
+                                        {selectedExpense.isPaid ? (
+                                            <>
+                                                <CheckCircle className="w-16 h-16 mb-2" />
+                                                <span className="text-sm font-bold uppercase text-center">Pago</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <ThumbsDown className="w-16 h-16 mb-2" />
+                                                <span className="text-sm font-bold uppercase text-center">Marcar como Pago</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-auto pb-4">
+                                <button onClick={() => setShowDeleteModal(true)} className="w-full bg-[#FFA000] text-white font-bold py-4 rounded-xl shadow-lg active:bg-orange-500 transition-colors text-lg flex items-center justify-center gap-2">
+                                    Excluir
+                                </button>
+                            </div>
+                        </div>
+
+                        {showDeleteModal && (
+                            <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={(e) => { if(e.target === e.currentTarget) setShowDeleteModal(false); }}>
+                                <div className="bg-white rounded-lg w-full max-w-[320px] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
+                                    {!selectedExpense.groupId ? (
+                                        <>
+                                            <div className="p-6">
+                                                <h3 className="text-lg font-bold text-gray-900 mb-2">Excluir despesa</h3>
+                                                <p className="text-gray-600 text-sm">Tem certeza que deseja excluir "{selectedExpense.description}"? Esta ação não pode ser desfeita.</p>
+                                            </div>
+                                            <div className="flex border-t border-gray-200">
+                                                <button onClick={() => setShowDeleteModal(false)} className="flex-1 py-3 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">Cancelar</button>
+                                                <div className="w-px bg-gray-200"></div>
+                                                <button onClick={() => deleteExpense(selectedExpense, 'single')} className="flex-1 py-3 text-red-600 text-sm font-bold hover:bg-red-50 transition-colors">Excluir</button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="p-6 flex flex-col">
+                                            <h3 className="text-lg font-bold text-gray-900 mb-2">Excluir parcela</h3>
+                                            <p className="text-gray-700 text-sm mb-8">Esta parcela é parte de uma despesa recorrente. Quais deseja excluir?</p>
+                                            <div className="flex flex-col items-end space-y-6">
+                                                <button onClick={() => deleteExpense(selectedExpense, 'single')} className="text-[#0F8540] font-bold text-sm tracking-wide uppercase hover:opacity-70 transition-opacity">SOMENTE ESTA</button>
+                                                <button onClick={() => deleteExpense(selectedExpense, 'future')} className="text-[#0F8540] font-bold text-sm tracking-wide uppercase hover:opacity-70 transition-opacity">ESTA E PRÓXIMAS</button>
+                                                <button onClick={() => deleteExpense(selectedExpense, 'all')} className="text-[#0F8540] font-bold text-sm tracking-wide uppercase hover:opacity-70 transition-opacity">TODAS</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            return (
+                <div className="h-screen w-full flex justify-center bg-gray-100">
+                    <div className="w-full h-full max-w-md bg-white shadow-xl relative overflow-hidden flex flex-col">
+                        {currentView === 'dashboard' && renderDashboard()}
+                        {currentView === 'form' && <ExpenseForm selectedExpense={selectedExpense} onSave={saveExpense} onCancel={() => setCurrentView('dashboard')} />}
+                        {currentView === 'details' && renderDetails()}
+                    </div>
+                </div>
+            );
+        }
+
+        // Renderiza o aplicativo
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
